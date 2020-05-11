@@ -1,0 +1,223 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+## Load libraries
+```{r}
+library(tidyverse)
+library(maxLik)
+library(survival)
+```
+
+## Load the data
+```{r}
+library(asaur)
+dat <- pbc
+
+# recode status&sex
+dat$status = ifelse(dat$status == 2, 1, 0)
+dat$sex = ifelse(dat$sex == "f", 1, 0)
+table(dat$status)/length(dat$status)
+
+# convert the time in days to years for simplicity
+dat$time = floor(dat$time / 365)
+
+# remove all rows with missing values from the dataframe
+dat <- dat[complete.cases(dat), ]
+head(dat)
+```
+## Histogram of age & sex distribution
+```{r}
+# Create a histogram of age
+ggplot(dat, aes(x=age)) +
+    geom_histogram(binwidth=2, colour="black", fill="pink") + ggtitle("Distribution of Age") + xlab("Age (years)") +  ylab("Frequency") +   ggtitle("Histogram of Age") + 
+  theme(plot.title = element_text(hjust = 0.5)) + scale_x_continuous(breaks = seq(0, 80, by = 3))
+summary(dat$age)
+table(d$sex)
+
+```
+## Correlation Matrix
+```{r}
+cor.mtest <- function(mat) {
+    mat <- as.matrix(mat)
+    n <- ncol(mat)
+    p.mat<- matrix(NA, n, n)
+    diag(p.mat) <- 0
+    for (i in 1:(n - 1)) {
+        for (j in (i + 1):n) {
+            tmp <- cor.test(mat[, i], mat[, j])
+            p.mat[i, j] <- p.mat[j, i] <- tmp$p.value
+        }
+    }
+  colnames(p.mat) <- rownames(p.mat) <- colnames(mat)
+  p.mat
+}
+# matrix of correlation statistic
+corr<-cor(dat)
+# matrix of the p-value of the correlation
+p.mat <- cor.mtest(dat)
+
+# Specialized the insignificant value according to the significant level
+corrplot(corr, type="upper", order="hclust", 
+         p.mat = p.mat, sig.level = 0.05)  
+
+```
+## Density Distribution of Quantitative Varibles
+```{r}
+xlabels <- list("bili" = "Serum Bilirubin (mg/dl)", 
+                "chol" = "Serum Cholesterol in (mg/dl)", 
+                "albumin" = "Albumin (gm/dl)", 
+                "copper" = "Urine Copper (ug/day))", 
+                "alk.phos" = "Alkaline Phosphatase (U/liter))", 
+                "ast"=	"aspartate aminotransferase, once called SGOT (U/ml)", 
+                "trig" = "triglicerides in mg/dl platelet = platelets per cubic ml/1000", 
+                "protime" = "prothrombin time in seconds")
+density_plot<-function(x, log = FALSE){
+  if(log){
+    return(ggplot(dat, aes(x=log(dat[[x]]))) + geom_density() + xlab(paste0("log(dat$",x,")")) +  ylab("Density") + ggtitle(paste0("log(dat$", x,")")) + theme(plot.title = element_text(hjust = 0.5)))
+  }
+  return(ggplot(dat, aes(x=dat[[x]])) + geom_density() + xlab(xlabels[[x]]) +  ylab("Density") + ggtitle(paste0("Density Plot of dat$", x)) + theme(plot.title = element_text(hjust = 0.5)))
+}
+l <- ls(xlabels)
+```
+
+```{r}
+# Arrange and display the plots into a 2x4 grid. xlab(paste0("log( d$", x,")"))
+grid.arrange(density_plot(l[1]),
+             density_plot(l[2]),
+             density_plot(l[3]),
+             density_plot(l[4]), ncol=2)
+```
+```{r}
+# Arrange and display the plots into a 2x4 grid
+grid.arrange(density_plot(l[5]),
+             density_plot(l[6]),
+             density_plot(l[7]),
+             density_plot(l[8]), ncol=2)
+```
+# Transform the Data
+```{r, echo=TRUE, warning=FALSE}
+# apply log transformation -- 7 variables
+dat$alk.phos <- log(dat$alk.phos)
+dat$bili <- log(dat$bili)
+dat$chol <- log(dat$chol)
+dat$copper <- log(dat$copper)
+dat$protime <- log(dat$protime)
+dat$ast <- log(dat$ast)
+dat$trig <- log(dat$trig)
+# change data labels -- 7 variables
+d$trt <- factor(d$drug, 
+                     levels = c("1", "2"), 
+                     labels = c("D-penicillamine", "placebo"))
+d$sex <- factor(d$sex, 
+                     levels = c("0", "1"), 
+                     labels = c("male", "female"))
+d$ascites <- factor(d$ascites, 
+                    levels = c("0", "1"), 
+                    labels = c("no", "yes"))
+d$hepato <- factor(d$hepato, 
+                    levels = c("0", "1"), 
+                    labels = c("no", "yes"))
+d$spiders <- factor(d$spider, 
+                    levels = c("0", "1"), 
+                    labels = c("no", "yes"))
+d$edema <- factor(d$edema, 
+                    levels = c("0", "0.5", "1"), 
+                    labels = c("no edema and no diuretic therapy for edema", 
+                               "edema present without diuretics, or edema resolved by diuretics",
+                               "edema despite diuretic therapy"))
+d$stage <- factor(d$stage,
+                      levels = c("1", "2", "3", "4"),
+                      labels = c("one", "two", "three", "four"))
+```
+
+# One sample_nonparametric estimation
+## Kaplan-Meyer estimator
+```{r}
+fit.KM <- survfit(Surv(time, status) ~ stage, data = dat)
+summary(fit.KM)
+```
+
+```{r}
+plot(fit.KM, mark.time = TRUE,
+     main = "Kaplan-Meier estimator",
+     ylab = "Survival probability",
+     xlab = "time (years)" ,col = 1:4)
+legend("bottomleft", lty = 1, col = 1:4, legend = names(fit.KM$strata))
+```
+
+
+### Median survival
+```{r}
+fit.KM
+```
+### Test the possibility to survive more than 10 years
+```{r}
+summary(fit.KM, time = 10)
+#as shown below 40.7%
+```
+
+# Nonparametric comparison of two samples
+## The logrank test
+```{r}
+fit.logrank <- survdiff(Surv(time, status) ~ stage, data = dat)
+fit.logrank
+
+```
+
+# Cox model
+The proportional hazards assumption is supported by a non-significant relationship between the _Schoenfeld residuals_ and time. The two must be independent.
+## Testing the Proportional-Hazards Assumption with Schoenfeld residuals
+```{r}
+res.cox <- coxph(Surv(time, status) ~ trt + age + sex + ascites + hepato + 
+                   spiders + edema + bili + chol + albumin + copper + alk.phos + 
+                   ast + trig + protime + stage , data = dat)
+test.ph <- cox.zph(res.cox)
+test.ph
+```
+The output above shows that the test is not statistically significant for each of the covariates, and the global test is also not statistically significant.
+
+
+The Cox Model assumes that continuous covariates have a nonlinear form. We can test the nonlinearity assumption by plotting the _Martingale residuals_ against the continuous covariates. 
+## Testing the Proportional-Hazards Assumption with Martingale residuals
+```{r}
+ggcoxfunctional(Surv(time, status) ~  age + bili + chol + albumin + copper + 
+                  alk.phos + ast + trig + protime, data = dat)
+```
+The assumption of non linearity is supported
+
+## Fit the Cox model
+```{r}
+fit.cox <- coxph( Surv(time, status)  ~ sex + age + stage + trt + albumin + alk.phos + ascites + ast + bili+ chol+copper+edema+hepato+platelet+protime+sex+spiders+trig , data = dat)
+summary(fit.cox)
+```
+```{r}
+broom::tidy(fit.cox)
+```
+## Automatic model selection based on AIC
+```{r}
+Mfull <- coxph(Surv(time, status) ~ sex + age + stage + trt + albumin + alk.phos + ascites + ast + bili+ chol+copper+edema+hepato+platelet+protime+spiders+trig, data = train)
+
+```
+
+```{r}
+MAIC <- step(Mfull)
+```
+
+```{r}
+summary(MAIC)
+# where we can see the 6 most important covariates by p-value
+```
+```{r}
+MAIC[1]
+# where we can see the 6 most important covariates by p-value
+```
+```{r}
+#try 6 most important variables
+try<-coxph(Surv(time, status) ~  age + stage + albumin +  bili+ chol+edema, data = train)
+try
+summary(try)
+
+```
+
+
